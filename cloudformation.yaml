@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Strava Goal Daily Texter Stack
+Parameters:
+  StravaLambdaName:
+    Type: String
+    Default: strava-goal-function
+  PhoneNumber:
+    Type: String
+    Default: '+12345678910'
+  StravaClientSecret:
+    Type: String
+    Default: secret_key
+  StravaRefreshToken:
+    Type: String
+    Default: refresh_token
+  ElevationGoal:
+    Type: Number
+    Default: 30000
+  DistanceGoal:
+    Type: Number
+    Default: 3000
+  StravaClientID:
+    Type: Number
+    Default: 3000
+Resources:
+  StravaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: strava.handler
+      MemorySize: 128
+      Role: !Sub ${LambdaRole.Arn}
+      Runtime: python3.7
+      Timeout: 30
+      ReservedConcurrentExecutions: 1
+      FunctionName: !Ref StravaLambdaName
+      Environment:
+        Variables:
+          PHONE_NUMBER: !Ref PhoneNumber
+          STRAVA_CLIENT_SECRET: !Ref StravaClientSecret
+          STRAVA_REFRESH_TOKEN: !Ref StravaRefreshToken
+          ELEVATION_GOALS: !Ref ElevationGoal
+          DISTANCE_GOALS: !Ref DistanceGoal
+          STRAVA_CLIENT_ID: !Ref StravaClientID
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              print("Event: %s" % json.dumps(event))
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        - PolicyName: strava-function-policy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+  LambdaSchedule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: >
+        Daily Run Kambda
+      ScheduleExpression: cron(0 11 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${StravaFunction.Arn}
+          Id: LambdaSchedule
+  LambdaSchedulePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Sub ${StravaFunction.Arn}
+      Principal: 'events.amazonaws.com'
+      SourceArn: !Sub ${LambdaSchedule.Arn}
